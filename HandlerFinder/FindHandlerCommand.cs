@@ -177,11 +177,14 @@ namespace HandlerFinder
 
             switch (node)
             {
-                case RecordDeclarationSyntax _:
-                    name = ((BaseTypeDeclarationSyntax)node).Identifier.Text;
+                case RecordDeclarationSyntax recordDeclarationSyntax:
+                    name = recordDeclarationSyntax.Identifier.Text;
                     break;
-                case IdentifierNameSyntax _:
-                    name = ((IdentifierNameSyntax)node).Identifier.Text;
+                case IdentifierNameSyntax identifierNameSyntax:
+                    name = identifierNameSyntax.Identifier.Text;
+                    break;
+                case ClassDeclarationSyntax classDeclarationSyntax:
+                    name = classDeclarationSyntax.Identifier.Text;
                     break;
             }
 
@@ -301,6 +304,11 @@ namespace HandlerFinder
             {
                 foreach (TypeSyntax typeArgument in type.TypeArgumentList.Arguments)
                 {
+                    if (typeArgument is GenericNameSyntax)
+                    {
+                        continue;
+                    }
+
                     var typeArgumentIdentifierSyntax = (IdentifierNameSyntax)typeArgument;
                     if (typeArgumentIdentifierSyntax.Identifier.Text == requestedCommandOrRequest)
                     {
@@ -311,7 +319,7 @@ namespace HandlerFinder
                         SyntaxTree syntaxTree = await document.GetSyntaxTreeAsync();
                         SyntaxNode semantics = await document.GetSyntaxRootAsync();
 
-                        IEnumerable<MethodDeclarationSyntax> declaredMethods = 
+                        IEnumerable<MethodDeclarationSyntax> declaredMethods =
                             semantics.DescendantNodesAndSelf().OfType<MethodDeclarationSyntax>();
 
                         foreach (MethodDeclarationSyntax method in declaredMethods)
@@ -344,9 +352,11 @@ namespace HandlerFinder
         private bool IsSyntaxNodeSupported(SyntaxNode node)
         {
             bool isSupported = node != null
-                && ((node is IdentifierNameSyntax) || (node is RecordDeclarationSyntax));
+                && ((node is IdentifierNameSyntax) ||
+                    (node is RecordDeclarationSyntax) ||
+                    (node is ClassDeclarationSyntax));
 
-            isSupported &= GetIdentifierNameByNode(node) != string.Empty;
+            isSupported = isSupported && GetIdentifierNameByNode(node) != string.Empty;
 
             return isSupported;
         }
