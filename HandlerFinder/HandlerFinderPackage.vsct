@@ -54,10 +54,10 @@
           If you do not want an image next to your command, remove the Icon node /> -->
       <Button guid="guidHandlerFinderPackageCmdSet" id="FindHandlerCommandId" priority="0x0100" type="Button">
         <Parent guid="guidHandlerFinderPackageCmdSet" id="MyMenuGroup" />
-        <Icon guid="guidImages" id="bmpPic1" />
+        <Icon guid="guidImages" id="bmpPic3" />
           <CommandFlag>DynamicVisibility</CommandFlag>
         <Strings>
-          <ButtonText>Find Request/Command Handler</ButtonText>
+          <ButtonText>Find Handler</ButtonText>
         </Strings>
       </Button>
     </Buttons>
@@ -69,7 +69,7 @@
             bitmap strip containing the bitmaps and then there are the numeric ids of the elements used
             inside a button definition. An important aspect of this declaration is that the element id
             must be the actual index (1-based) of the bitmap inside the bitmap strip. -->
-      <Bitmap guid="guidImages" href="Resources\FindHandlerCommand.png" usedList="bmpPic1"/>
+      <Bitmap guid="guidImages" href="Resources\FindHandlerCommand.png" usedList="bmpPic1, bmpPic2, bmpPic3"/>
     </Bitmaps>
   </Commands>
 
@@ -84,7 +84,9 @@
     </GuidSymbol>
 
     <GuidSymbol name="guidImages" value="{36decf2c-8c26-427b-b80b-c0e231aa3e2f}" >
-      <IDSymbol name="bmpPic1" value="1" />
+        <IDSymbol name="bmpPic1" value="1" />
+        <IDSymbol name="bmpPic2" value="2" />
+        <IDSymbol name="bmpPic3" value="3" />
     </GuidSymbol>
   </Symbols>
 </CommandTable>
