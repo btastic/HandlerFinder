@@ -9,11 +9,15 @@ This is an extension for Visual Studio to help finding Command/Request Handlers 
 - In case it was not able to find a handler it will not open anything (maybe there will be better feedback in the future)
 
 ## Logic
-- It first decides, whether to look for a command handler or a request handler.
+- It first decides, whether to look for a command handler or a request handler
 - According to the handlers type, it will get a reference to the containing project
   - For command handlers it will get the domain project
-  - For request handlers it will get the application project
-- After that, it will look for *.cs files contained in a folder named "commandhandlers" or "requesthandlers"
+  - For request/query handlers it will get the application project
+- After that, it will look for *.cs files contained in the following folders
+  - "commandhandlers"
+  - "commandhandler"
+  - "queryhandlers"
+  - "queryhandler"
 - Then it will look for classes that implement `IRequestHandler`
 - Iterate over all `IRequestHandler` and determine the first type argument
 - If the type argument matches the request handlers name, it was successful
