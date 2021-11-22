@@ -147,12 +147,12 @@ namespace HandlerFinder
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-                if (requestedCommandOrRequest.ToLowerInvariant().EndsWith("request"))
+                if (IsRequestOrQuery(requestedCommandOrRequest))
                 {
                     (fileName, lineToGoTo) =
                         await FindRequestHandlerAsync(requestedCommandOrRequest);
                 }
-                else if (requestedCommandOrRequest.ToLowerInvariant().EndsWith("command"))
+                else if (IsCommand(requestedCommandOrRequest))
                 {
                     (fileName, lineToGoTo) =
                         await FindCommandHandlerAsync(requestedCommandOrRequest);
@@ -171,103 +171,24 @@ namespace HandlerFinder
             }
         }
 
-        private string GetIdentifierNameByNode(SyntaxNode node)
-        {
-            string name = string.Empty;
-
-            switch (node)
-            {
-                case RecordDeclarationSyntax recordDeclarationSyntax:
-                    name = recordDeclarationSyntax.Identifier.Text;
-                    break;
-                case IdentifierNameSyntax identifierNameSyntax:
-                    name = identifierNameSyntax.Identifier.Text;
-                    break;
-                case ClassDeclarationSyntax classDeclarationSyntax:
-                    name = classDeclarationSyntax.Identifier.Text;
-                    break;
-            }
-
-            if (name != "var")
-            {
-                return name;
-            }
-
-            return string.Empty;
-        }
-
         private async Task<Tuple<string, int>> FindCommandHandlerAsync(string requestedCommandOrRequest)
         {
-            string fileNameToOpen = string.Empty;
-            int lineToGoTo = 0;
-
-            var componentModel = (IComponentModel)await ServiceProvider.GetServiceAsync(typeof(SComponentModel));
-
-            if (componentModel == null)
-            {
-                return new Tuple<string, int>(string.Empty, 0);
-            }
-
-            VisualStudioWorkspace workspace = componentModel.GetService<VisualStudioWorkspace>();
-
-            Solution solution = workspace.CurrentSolution;
-
-            Project domainProject =
-                solution.Projects.SingleOrDefault(y => y.Name.ToLowerInvariant().EndsWith("domain"));
-
-            IEnumerable<GenericNameSyntax> types =
-                domainProject
-                .Documents
-                .Where(x => x.FilePath.ToLowerInvariant().Contains("commandhandlers"))
-                .Select(doc =>
-                    new
-                    {
-                        Model = doc.GetSemanticModelAsync().Result,
-                        Declarations = doc.GetSyntaxRootAsync().Result
-                            .DescendantNodes().OfType<GenericNameSyntax>()
-                    }).Where(x => x.Declarations.Any())
-                    .SelectMany(x => x.Declarations)
-                    .Where(x => x.Identifier.Text == "IRequestHandler");
-
-            foreach (GenericNameSyntax type in types)
-            {
-                foreach (TypeSyntax typeArgument in type.TypeArgumentList.Arguments)
-                {
-                    var typeArgumentIdentifierSyntax = (IdentifierNameSyntax)typeArgument;
-                    if (typeArgumentIdentifierSyntax.Identifier.Text == requestedCommandOrRequest)
-                    {
-                        fileNameToOpen = type.SyntaxTree.FilePath;
-
-                        Document document = domainProject.Documents.Single(x => x.FilePath == fileNameToOpen);
-
-                        SyntaxTree syntaxTree = await document.GetSyntaxTreeAsync();
-                        SyntaxNode semantics = await document.GetSyntaxRootAsync();
-
-                        IEnumerable<MethodDeclarationSyntax> declaredMethods = semantics.DescendantNodesAndSelf().OfType<MethodDeclarationSyntax>();
-
-                        foreach (MethodDeclarationSyntax method in declaredMethods)
-                        {
-                            if (((IdentifierNameSyntax)(method.ParameterList.Parameters.First()).Type).Identifier.Text == requestedCommandOrRequest)
-                            {
-                                lineToGoTo = syntaxTree.GetLineSpan(method.Span).StartLinePosition.Line;
-                                break;
-                            }
-                        }
-
-                        break;
-                    }
-                }
-
-                if (!string.IsNullOrEmpty(fileNameToOpen))
-                {
-                    break;
-                }
-            }
-
-            return new Tuple<string, int>(fileNameToOpen, lineToGoTo);
+            return await FindHandlerInternalAsync(
+                requestedCommandOrRequest,
+                "domain",
+                IsInCommandHandlersFolder);
         }
 
         private async Task<Tuple<string, int>> FindRequestHandlerAsync(string requestedCommandOrRequest)
+        {
+            return await FindHandlerInternalAsync(
+                requestedCommandOrRequest,
+                "application",
+                IsInRequestHandlersFolder);
+        }
+
+        private async Task<Tuple<string, int>> FindHandlerInternalAsync(
+            string requestedCommandOrRequest, string project, Func<Document, bool> folderFilter)
         {
             string fileNameToOpen = string.Empty;
             int lineToGoTo = 0;
@@ -284,12 +205,12 @@ namespace HandlerFinder
             Solution solution = workspace.CurrentSolution;
 
             Project applicationProject =
-                solution.Projects.SingleOrDefault(y => y.Name.ToLowerInvariant().EndsWith("application"));
+                solution.Projects.SingleOrDefault(y => y.Name.ToLowerInvariant().EndsWith(project));
 
             IEnumerable<GenericNameSyntax> types =
                 applicationProject
                 .Documents
-                .Where(x => x.FilePath.ToLowerInvariant().Contains("requesthandlers"))
+                .Where(x => folderFilter(x))
                 .Select(doc =>
                     new
                     {
@@ -345,23 +266,6 @@ namespace HandlerFinder
         }
 
         /// <summary>
-        /// Checks if the syntax node type is supported
-        /// </summary>
-        /// <param name="node"></param>
-        /// <returns></returns>
-        private bool IsSyntaxNodeSupported(SyntaxNode node)
-        {
-            bool isSupported = node != null
-                && ((node is IdentifierNameSyntax) ||
-                    (node is RecordDeclarationSyntax) ||
-                    (node is ClassDeclarationSyntax));
-
-            isSupported = isSupported && GetIdentifierNameByNode(node) != string.Empty;
-
-            return isSupported;
-        }
-
-        /// <summary>
         /// Retrieves 
         /// </summary>
         /// <returns></returns>
@@ -400,6 +304,77 @@ namespace HandlerFinder
                 (IComponentModel)await ServiceProvider.GetServiceAsync(typeof(SComponentModel));
             Assumes.Present(componentModel);
             return componentModel.GetService<IVsEditorAdaptersFactoryService>();
+        }
+
+        /// <summary>
+        /// Checks if the syntax node type is supported
+        /// </summary>
+        /// <param name="node"></param>
+        /// <returns></returns>
+        private bool IsSyntaxNodeSupported(SyntaxNode node)
+        {
+            bool isSupported = node != null
+                && ((node is IdentifierNameSyntax) ||
+                    (node is RecordDeclarationSyntax) ||
+                    (node is ClassDeclarationSyntax));
+
+            isSupported = isSupported && GetIdentifierNameByNode(node) != string.Empty;
+
+            return isSupported;
+        }
+
+        private string GetIdentifierNameByNode(SyntaxNode node)
+        {
+            string name = string.Empty;
+
+            switch (node)
+            {
+                case RecordDeclarationSyntax recordDeclarationSyntax:
+                    name = recordDeclarationSyntax.Identifier.Text;
+                    break;
+                case IdentifierNameSyntax identifierNameSyntax:
+                    name = identifierNameSyntax.Identifier.Text;
+                    break;
+                case ClassDeclarationSyntax classDeclarationSyntax:
+                    name = classDeclarationSyntax.Identifier.Text;
+                    break;
+            }
+
+            if (name != "var")
+            {
+                return name;
+            }
+
+            return string.Empty;
+        }
+
+        private bool IsInCommandHandlersFolder(Document document)
+        {
+            bool inCommandHandlersFolder = document.FilePath.ToLowerInvariant().Contains("commandhandlers");
+            bool inCommandHandlerFolder = document.FilePath.ToLowerInvariant().Contains("commandhandler");
+
+            return inCommandHandlerFolder || inCommandHandlersFolder;
+        }
+
+        private bool IsInRequestHandlersFolder(Document document)
+        {
+            bool inRequestHandlersFolder = document.FilePath.ToLowerInvariant().Contains("requesthandlers");
+            bool inRequestHandlerFolder = document.FilePath.ToLowerInvariant().Contains("requesthandler");
+
+            return inRequestHandlerFolder || inRequestHandlersFolder;
+        }
+
+        private bool IsRequestOrQuery(string requestedCommandOrRequest)
+        {
+            bool isRequest = requestedCommandOrRequest.ToLowerInvariant().EndsWith("request");
+            bool isQuery = requestedCommandOrRequest.ToLowerInvariant().EndsWith("query");
+
+            return isQuery || isRequest;
+        }
+
+        private bool IsCommand(string requestedCommandOrRequest)
+        {
+            return requestedCommandOrRequest.ToLowerInvariant().EndsWith("command");
         }
     }
 }
