@@ -361,7 +361,11 @@ namespace HandlerFinder
             bool inRequestHandlersFolder = document.FilePath.ToLowerInvariant().Contains("requesthandlers");
             bool inRequestHandlerFolder = document.FilePath.ToLowerInvariant().Contains("requesthandler");
 
-            return inRequestHandlerFolder || inRequestHandlersFolder;
+            bool isQueryHandlersFolder = document.FilePath.ToLowerInvariant().Contains("queryhandlers");
+            bool inQueryHandlerFolder = document.FilePath.ToLowerInvariant().Contains("queryhandler");
+
+            return (inRequestHandlerFolder || inRequestHandlersFolder) ||
+                   (isQueryHandlersFolder || inQueryHandlerFolder);
         }
 
         private bool IsRequestOrQuery(string requestedCommandOrRequest)
