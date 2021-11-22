@@ -225,34 +225,42 @@ namespace HandlerFinder
             {
                 foreach (TypeSyntax typeArgument in type.TypeArgumentList.Arguments)
                 {
-                    if (typeArgument is GenericNameSyntax)
+                    string identifierText = GetIdentifierNameByNode(typeArgument);
+                    if (string.IsNullOrWhiteSpace(identifierText))
                     {
                         continue;
                     }
 
-                    var typeArgumentIdentifierSyntax = (IdentifierNameSyntax)typeArgument;
-                    if (typeArgumentIdentifierSyntax.Identifier.Text == requestedCommandOrRequest)
+                    if (identifierText != requestedCommandOrRequest)
                     {
-                        fileNameToOpen = type.SyntaxTree.FilePath;
+                        continue;
+                    }
 
-                        Document document = applicationProject.Documents.Single(x => x.FilePath == fileNameToOpen);
+                    fileNameToOpen = type.SyntaxTree.FilePath;
 
-                        SyntaxTree syntaxTree = await document.GetSyntaxTreeAsync();
-                        SyntaxNode semantics = await document.GetSyntaxRootAsync();
+                    Document document = applicationProject.Documents.Single(x => x.FilePath == fileNameToOpen);
 
-                        IEnumerable<MethodDeclarationSyntax> declaredMethods =
-                            semantics.DescendantNodesAndSelf().OfType<MethodDeclarationSyntax>();
+                    SyntaxTree syntaxTree = await document.GetSyntaxTreeAsync();
+                    SyntaxNode semantics = await document.GetSyntaxRootAsync();
 
-                        foreach (MethodDeclarationSyntax method in declaredMethods)
+                    IEnumerable<MethodDeclarationSyntax> declaredMethods =
+                        semantics.DescendantNodesAndSelf().OfType<MethodDeclarationSyntax>();
+
+                    foreach (MethodDeclarationSyntax method in declaredMethods)
+                    {
+                        string firstParameterIdentifierName =
+                            GetIdentifierNameByNode(method.ParameterList.Parameters.First().Type);
+
+                        if (string.IsNullOrWhiteSpace(firstParameterIdentifierName))
                         {
-                            if (((IdentifierNameSyntax)(method.ParameterList.Parameters.First()).Type).Identifier.Text == requestedCommandOrRequest)
-                            {
-                                lineToGoTo = syntaxTree.GetLineSpan(method.Span).StartLinePosition.Line;
-                                break;
-                            }
+                            continue;
                         }
 
-                        break;
+                        if (firstParameterIdentifierName == requestedCommandOrRequest)
+                        {
+                            lineToGoTo = syntaxTree.GetLineSpan(method.Span).StartLinePosition.Line;
+                            break;
+                        }
                     }
                 }
 
@@ -337,6 +345,9 @@ namespace HandlerFinder
                     break;
                 case ClassDeclarationSyntax classDeclarationSyntax:
                     name = classDeclarationSyntax.Identifier.Text;
+                    break;
+                case GenericNameSyntax genericNameSyntax:
+                    name = genericNameSyntax.Identifier.Text;
                     break;
             }
 
