@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using Community.VisualStudio.Toolkit;
 using EnvDTE;
 using EnvDTE80;
 using Microsoft;
@@ -18,7 +20,6 @@ using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.TextManager.Interop;
 using Microsoft.VisualStudio.Threading;
 using Document = Microsoft.CodeAnalysis.Document;
-using Project = Microsoft.CodeAnalysis.Project;
 using Solution = Microsoft.CodeAnalysis.Solution;
 using Task = System.Threading.Tasks.Task;
 
@@ -74,7 +75,7 @@ namespace HandlerFinder
                 command.Visible = false;
                 ThreadHelper.JoinableTaskFactory.Run(async delegate
                 {
-                    (SyntaxNode node, Document document) = await GetCurrentTokenAndDocumentAsync();
+                    (SyntaxNode node, _) = await GetCurrentTokenAndDocumentAsync();
                     command.Visible = IsSyntaxNodeSupported(node);
                 });
             }
@@ -123,6 +124,9 @@ namespace HandlerFinder
         /// <param name="e">Event args.</param>
         private void Execute(object sender, EventArgs e)
         {
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+
             string requestedCommandOrRequest = string.Empty;
             (string fileName, int lineToGoTo) = (string.Empty, 0);
 
@@ -147,20 +151,17 @@ namespace HandlerFinder
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-                if (IsRequestOrQuery(requestedCommandOrRequest))
-                {
-                    (fileName, lineToGoTo) =
-                        await FindRequestHandlerAsync(requestedCommandOrRequest);
-                }
-                else if (IsCommand(requestedCommandOrRequest))
-                {
-                    (fileName, lineToGoTo) =
-                        await FindCommandHandlerAsync(requestedCommandOrRequest);
-                }
+                (fileName, lineToGoTo) = await FindHandlerInternalAsync(requestedCommandOrRequest);
             });
 
             if (!string.IsNullOrEmpty(fileName))
             {
+                sw.Stop();
+                ThreadHelper.JoinableTaskFactory.Run(async delegate
+                {
+                    await VS.StatusBar.ShowMessageAsync($"Found handler in {sw.ElapsedMilliseconds} ms.");
+                });
+
                 var dte = Package.GetGlobalService(typeof(_DTE)) as DTE2;
                 dte.ExecuteCommand("File.OpenFile", fileName);
 
@@ -169,26 +170,10 @@ namespace HandlerFinder
                     ((TextSelection)dte.ActiveDocument.Selection).GotoLine(lineToGoTo + 1);
                 }
             }
+            sw.Reset();
         }
 
-        private async Task<Tuple<string, int>> FindCommandHandlerAsync(string requestedCommandOrRequest)
-        {
-            return await FindHandlerInternalAsync(
-                requestedCommandOrRequest,
-                "domain",
-                IsInCommandHandlersFolder);
-        }
-
-        private async Task<Tuple<string, int>> FindRequestHandlerAsync(string requestedCommandOrRequest)
-        {
-            return await FindHandlerInternalAsync(
-                requestedCommandOrRequest,
-                "application",
-                IsInRequestHandlersFolder);
-        }
-
-        private async Task<Tuple<string, int>> FindHandlerInternalAsync(
-            string requestedCommandOrRequest, string project, Func<Document, bool> folderFilter)
+        private async Task<Tuple<string, int>> FindHandlerInternalAsync(string requestedCommandOrRequest)
         {
             string fileNameToOpen = string.Empty;
             int lineToGoTo = 0;
@@ -204,28 +189,29 @@ namespace HandlerFinder
 
             Solution solution = workspace.CurrentSolution;
 
-            Project applicationProject =
-                solution.Projects.SingleOrDefault(y => y.Name.ToLowerInvariant().EndsWith(project));
+            IEnumerable<MethodDeclarationSyntax> methodDeclarationSyntaxes =
+                (await solution.Projects.Select(p => p.Documents)
+                .SelectMany(x => x)
+                .Select(async doc =>
+                {
+                    var syntaxRoot = await doc.GetSyntaxRootAsync();
 
-            IEnumerable<GenericNameSyntax> types =
-                applicationProject
-                .Documents
-                .Where(x => folderFilter(x))
-                .Select(doc =>
-                    new
+                    return new
                     {
-                        Model = doc.GetSemanticModelAsync().Result,
-                        Declarations = doc.GetSyntaxRootAsync().Result
-                            .DescendantNodes().OfType<GenericNameSyntax>()
-                    }).Where(x => x.Declarations.Any())
-                    .SelectMany(x => x.Declarations)
-                    .Where(x => x.Identifier.Text == "IRequestHandler");
+                        MethodDeclarations = syntaxRoot.DescendantNodes().OfType<MethodDeclarationSyntax>(),
+                    };
+                })
+                .WhenAllAsync())
+                .Where(x => x.MethodDeclarations.Any())
+                .SelectMany(x => x.MethodDeclarations)
+                .Where(x => x.Identifier.Text == "Handle");
 
-            foreach (GenericNameSyntax type in types)
+            foreach (MethodDeclarationSyntax method in methodDeclarationSyntaxes)
             {
-                foreach (TypeSyntax typeArgument in type.TypeArgumentList.Arguments)
+                foreach (ParameterSyntax typeArgument in method.ParameterList.Parameters)
                 {
                     string identifierText = GetIdentifierNameByNode(typeArgument);
+
                     if (string.IsNullOrWhiteSpace(identifierText))
                     {
                         continue;
@@ -236,32 +222,9 @@ namespace HandlerFinder
                         continue;
                     }
 
-                    fileNameToOpen = type.SyntaxTree.FilePath;
-
-                    Document document = applicationProject.Documents.Single(x => x.FilePath == fileNameToOpen);
-
-                    SyntaxTree syntaxTree = await document.GetSyntaxTreeAsync();
-                    SyntaxNode semantics = await document.GetSyntaxRootAsync();
-
-                    IEnumerable<MethodDeclarationSyntax> declaredMethods =
-                        semantics.DescendantNodesAndSelf().OfType<MethodDeclarationSyntax>();
-
-                    foreach (MethodDeclarationSyntax method in declaredMethods)
-                    {
-                        string firstParameterIdentifierName =
-                            GetIdentifierNameByNode(method.ParameterList.Parameters.First().Type);
-
-                        if (string.IsNullOrWhiteSpace(firstParameterIdentifierName))
-                        {
-                            continue;
-                        }
-
-                        if (firstParameterIdentifierName == requestedCommandOrRequest)
-                        {
-                            lineToGoTo = syntaxTree.GetLineSpan(method.Span).StartLinePosition.Line;
-                            break;
-                        }
-                    }
+                    fileNameToOpen = method.SyntaxTree.FilePath;
+                    lineToGoTo = method.Identifier.SyntaxTree.GetLineSpan(method.Span).StartLinePosition.Line;
+                    break;
                 }
 
                 if (!string.IsNullOrEmpty(fileNameToOpen))
@@ -324,7 +287,8 @@ namespace HandlerFinder
             bool isSupported = node != null
                 && ((node is IdentifierNameSyntax) ||
                     (node is RecordDeclarationSyntax) ||
-                    (node is ClassDeclarationSyntax));
+                    (node is ClassDeclarationSyntax) ||
+                    (node is ConstructorDeclarationSyntax));
 
             isSupported = isSupported && GetIdentifierNameByNode(node) != string.Empty;
 
@@ -337,6 +301,9 @@ namespace HandlerFinder
 
             switch (node)
             {
+                case ParameterSyntax parameterSyntax:
+                    name = parameterSyntax.Type.ToFullString().Trim();
+                    break;
                 case RecordDeclarationSyntax recordDeclarationSyntax:
                     name = recordDeclarationSyntax.Identifier.Text;
                     break;
@@ -349,6 +316,9 @@ namespace HandlerFinder
                 case GenericNameSyntax genericNameSyntax:
                     name = genericNameSyntax.Identifier.Text;
                     break;
+                case ConstructorDeclarationSyntax constructorDeclarationSyntax:
+                    name = constructorDeclarationSyntax.Identifier.Text;
+                    break;
             }
 
             if (name != "var")
@@ -359,37 +329,44 @@ namespace HandlerFinder
             return string.Empty;
         }
 
-        private bool IsInCommandHandlersFolder(Document document)
-        {
-            bool inCommandHandlersFolder = document.FilePath.ToLowerInvariant().Contains("commandhandlers");
-            bool inCommandHandlerFolder = document.FilePath.ToLowerInvariant().Contains("commandhandler");
-
-            return inCommandHandlerFolder || inCommandHandlersFolder;
-        }
-
-        private bool IsInRequestHandlersFolder(Document document)
-        {
-            bool inRequestHandlersFolder = document.FilePath.ToLowerInvariant().Contains("requesthandlers");
-            bool inRequestHandlerFolder = document.FilePath.ToLowerInvariant().Contains("requesthandler");
-
-            bool isQueryHandlersFolder = document.FilePath.ToLowerInvariant().Contains("queryhandlers");
-            bool inQueryHandlerFolder = document.FilePath.ToLowerInvariant().Contains("queryhandler");
-
-            return (inRequestHandlerFolder || inRequestHandlersFolder) ||
-                   (isQueryHandlersFolder || inQueryHandlerFolder);
-        }
-
-        private bool IsRequestOrQuery(string requestedCommandOrRequest)
+        private HandlerType? GetHandlerType(string requestedCommandOrRequest)
         {
             bool isRequest = requestedCommandOrRequest.ToLowerInvariant().EndsWith("request");
             bool isQuery = requestedCommandOrRequest.ToLowerInvariant().EndsWith("query");
+            bool isCommand = requestedCommandOrRequest.ToLowerInvariant().EndsWith("command");
 
-            return isQuery || isRequest;
-        }
+            if (isRequest || isQuery)
+            {
+                return HandlerType.Query;
+            }
 
-        private bool IsCommand(string requestedCommandOrRequest)
-        {
-            return requestedCommandOrRequest.ToLowerInvariant().EndsWith("command");
+            if (isCommand)
+            {
+                return HandlerType.Command;
+            }
+
+            return null;
         }
     }
 }
+
+public static class EnumerableExtensions
+{
+    public static async Task<IEnumerable<T>> WhenAllAsync<T>(this IEnumerable<Task<T>> tasks)
+    {
+        return await Task.WhenAll(tasks);
+    }
+}
+
+public enum HandlerType
+{
+    Query,
+    Command
+}
+
+public class Holder
+{
+    public List<MethodDeclarationSyntax> MethodDeclarations { get; set; }
+    public List<GenericNameSyntax> Declarations { get; set; }
+}
+
