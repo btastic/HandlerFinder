@@ -65,6 +65,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Community.VisualStudio.Toolkit.17">
+      <Version>17.0.492</Version>
+    </PackageReference>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp">
       <Version>4.0.1</Version>
     </PackageReference>
