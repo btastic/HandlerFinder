@@ -157,6 +157,7 @@ namespace HandlerFinder
             if (!string.IsNullOrEmpty(fileName))
             {
                 sw.Stop();
+
                 ThreadHelper.JoinableTaskFactory.Run(async delegate
                 {
                     await VS.StatusBar.ShowMessageAsync($"Found handler in {sw.ElapsedMilliseconds} ms.");
@@ -169,6 +170,14 @@ namespace HandlerFinder
                 {
                     ((TextSelection)dte.ActiveDocument.Selection).GotoLine(lineToGoTo + 1);
                 }
+            }
+            else
+            {
+                ThreadHelper.JoinableTaskFactory.Run(async delegate
+                {
+                    await VS.StatusBar.ShowMessageAsync($"No handler found for Command/Event '{requestedCommandOrRequest}'.");
+                });
+
             }
             sw.Reset();
         }
@@ -328,45 +337,5 @@ namespace HandlerFinder
 
             return string.Empty;
         }
-
-        private HandlerType? GetHandlerType(string requestedCommandOrRequest)
-        {
-            bool isRequest = requestedCommandOrRequest.ToLowerInvariant().EndsWith("request");
-            bool isQuery = requestedCommandOrRequest.ToLowerInvariant().EndsWith("query");
-            bool isCommand = requestedCommandOrRequest.ToLowerInvariant().EndsWith("command");
-
-            if (isRequest || isQuery)
-            {
-                return HandlerType.Query;
-            }
-
-            if (isCommand)
-            {
-                return HandlerType.Command;
-            }
-
-            return null;
-        }
     }
 }
-
-public static class EnumerableExtensions
-{
-    public static async Task<IEnumerable<T>> WhenAllAsync<T>(this IEnumerable<Task<T>> tasks)
-    {
-        return await Task.WhenAll(tasks);
-    }
-}
-
-public enum HandlerType
-{
-    Query,
-    Command
-}
-
-public class Holder
-{
-    public List<MethodDeclarationSyntax> MethodDeclarations { get; set; }
-    public List<GenericNameSyntax> Declarations { get; set; }
-}
-
