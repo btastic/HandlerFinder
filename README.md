@@ -6,8 +6,7 @@ This is an extension for Visual Studio to help finding Command/Request Handlers 
 - Right click on a type, class definition or record to open up the context menu
 - Click "Find handler"
 - If there is a handler, visual studio will navigate to it
-- In case it was not able to find a handler it will not open anything (maybe there will be better feedback in the future)
-
+- In case it was not able to find a handler it will not open anything & show a message in the status bar on the bottom left.
 ## Logic
 - Iterate over all solution *.cs documents
 - Find all method declarations named "Handle"
