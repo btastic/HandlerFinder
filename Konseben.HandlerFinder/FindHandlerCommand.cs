@@ -354,7 +354,15 @@ namespace Konseben.HandlerFinder
             switch (node)
             {
                 case ParameterSyntax parameterSyntax:
-                    name = parameterSyntax.Type.ToFullString().Trim();
+                    switch (parameterSyntax.Type)
+                    {
+                        case QualifiedNameSyntax qualifiedNameSyntax:
+                            name = qualifiedNameSyntax.Right.Identifier.ToFullString().Trim();
+                            break;
+                        default:
+                            name = parameterSyntax.Type.ToFullString().Trim();
+                            break;
+                    }
                     break;
                 case RecordDeclarationSyntax recordDeclarationSyntax:
                     name = recordDeclarationSyntax.Identifier.Text;
