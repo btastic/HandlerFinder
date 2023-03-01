@@ -40,6 +40,8 @@ namespace HandlerFinder
         /// </summary>
         public static readonly Guid s_commandSet = new Guid("222993a5-b14f-4206-9ba3-00cf383c7d99");
 
+        public Guid s_outputWindowPane = Guid.Empty;
+
         /// <summary>
         /// VS Package that provides this command, not null.
         /// </summary>
@@ -128,7 +130,6 @@ namespace HandlerFinder
             sw.Start();
 
             string requestedCommandOrRequest = string.Empty;
-            (string fileName, int lineToGoTo) = (string.Empty, 0);
 
             ThreadHelper.ThrowIfNotOnUIThread();
 
@@ -147,52 +148,94 @@ namespace HandlerFinder
                 return;
             }
 
+            IEnumerable<(string file, int lineIndex, int columnIndex)> results = new List<(string, int, int)>();
+
             ThreadHelper.JoinableTaskFactory.Run(async delegate
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-                (fileName, lineToGoTo) = await FindHandlerInternalAsync(requestedCommandOrRequest);
+                results = await FindHandlersInternalAsync(requestedCommandOrRequest);
             });
 
-            if (!string.IsNullOrEmpty(fileName))
+            if (results.Any())
             {
                 sw.Stop();
 
-                ThreadHelper.JoinableTaskFactory.Run(async delegate
-                {
-                    await VS.StatusBar.ShowMessageAsync($"Found handler in {sw.ElapsedMilliseconds} ms.");
-                });
+                long searchTimeInMs = sw.ElapsedMilliseconds;
 
                 var dte = Package.GetGlobalService(typeof(_DTE)) as DTE2;
-                dte.ExecuteCommand("File.OpenFile", fileName);
 
-                if (lineToGoTo > 0)
+                if (results.Count() == 1)
                 {
-                    ((TextSelection)dte.ActiveDocument.Selection).GotoLine(lineToGoTo + 1);
+                    var (file, lineIndex, columnIndex) = results.First();
+
+                    dte.ExecuteCommand("File.OpenFile", file);
+
+                    if (lineIndex > 0)
+                    {
+                        ((TextSelection)dte.ActiveDocument.Selection).MoveToLineAndOffset(lineIndex, columnIndex);
+                    }
+                }
+                else
+                {
+                    ThreadHelper.JoinableTaskFactory.Run(async delegate
+                    {
+                        Community.VisualStudio.Toolkit.OutputWindowPane pane = 
+                            await GetClearedResultsPaneAsync();
+
+                        await pane.WriteLineAsync($"Found {results.Count()} results for {requestedCommandOrRequest} in {searchTimeInMs} ms");
+
+                        foreach (var (file, lineIndex, columnIndex) in results)
+                        {
+                            await pane.WriteLineAsync($"1>{file}({lineIndex},{columnIndex})");
+                        }
+
+                        await pane.ActivateAsync();
+                    });
                 }
             }
             else
             {
                 ThreadHelper.JoinableTaskFactory.Run(async delegate
                 {
-                    await VS.StatusBar.ShowMessageAsync($"No handler found for Command/Event '{requestedCommandOrRequest}'.");
+                    Community.VisualStudio.Toolkit.OutputWindowPane pane =
+                        await GetClearedResultsPaneAsync();
+
+                    await pane.WriteLineAsync($"No handler found for Command/Event {requestedCommandOrRequest}");
                 });
 
             }
             sw.Reset();
         }
 
-        private async Task<Tuple<string, int>> FindHandlerInternalAsync(string requestedCommandOrRequest)
+        private async Task<Community.VisualStudio.Toolkit.OutputWindowPane> GetClearedResultsPaneAsync()
         {
-            string fileNameToOpen = string.Empty;
-            int lineToGoTo = 0;
+            Community.VisualStudio.Toolkit.OutputWindowPane pane;
 
+            if (s_outputWindowPane == Guid.Empty)
+            {
+                pane = await VS.Windows.CreateOutputWindowPaneAsync("Find Handler Results");
+                s_outputWindowPane = pane.Guid;
+            }
+            else
+            {
+                pane = await VS.Windows.GetOutputWindowPaneAsync(s_outputWindowPane);
+                await pane.ClearAsync();
+            }
+
+            return pane;
+        }
+
+        private async Task<IEnumerable<(string file, int lineIndex, int columnIndex)>> FindHandlersInternalAsync(string requestedCommandOrRequest)
+        {
             var componentModel = (IComponentModel)await ServiceProvider.GetServiceAsync(typeof(SComponentModel));
 
             if (componentModel == null)
             {
-                return new Tuple<string, int>(string.Empty, 0);
+                return new List<(string, int, int)>();
             }
+
+            var results = new List<(string, int, int)>();
 
             VisualStudioWorkspace workspace = componentModel.GetService<VisualStudioWorkspace>();
 
@@ -231,18 +274,15 @@ namespace HandlerFinder
                         continue;
                     }
 
-                    fileNameToOpen = method.SyntaxTree.FilePath;
-                    lineToGoTo = method.Identifier.SyntaxTree.GetLineSpan(method.Span).StartLinePosition.Line;
-                    break;
-                }
+                    var file = method.SyntaxTree.FilePath;
+                    var lineIndex = method.SyntaxTree.GetLineSpan(method.Span).StartLinePosition.Line + 1;
+                    var columnIndex = method.ToFullString().IndexOf("Handle") + 1;
 
-                if (!string.IsNullOrEmpty(fileNameToOpen))
-                {
-                    break;
+                    results.Add((file, lineIndex, columnIndex));
                 }
             }
 
-            return new Tuple<string, int>(fileNameToOpen, lineToGoTo);
+            return results;
         }
 
         /// <summary>
