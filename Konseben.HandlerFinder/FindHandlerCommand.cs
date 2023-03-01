@@ -21,9 +21,8 @@ using Microsoft.VisualStudio.TextManager.Interop;
 using Microsoft.VisualStudio.Threading;
 using Document = Microsoft.CodeAnalysis.Document;
 using Solution = Microsoft.CodeAnalysis.Solution;
-using Task = System.Threading.Tasks.Task;
 
-namespace HandlerFinder
+namespace Konseben.HandlerFinder
 {
     /// <summary>
     /// Command handler
@@ -180,7 +179,7 @@ namespace HandlerFinder
                 {
                     ThreadHelper.JoinableTaskFactory.Run(async delegate
                     {
-                        Community.VisualStudio.Toolkit.OutputWindowPane pane = 
+                        Community.VisualStudio.Toolkit.OutputWindowPane pane =
                             await GetClearedResultsPaneAsync();
 
                         await pane.WriteLineAsync($"Found {results.Count()} results for {requestedCommandOrRequest} in {searchTimeInMs} ms");
