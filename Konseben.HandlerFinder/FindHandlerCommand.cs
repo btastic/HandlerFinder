@@ -275,7 +275,11 @@ namespace Konseben.HandlerFinder
 
                     var file = method.SyntaxTree.FilePath;
                     var lineIndex = method.SyntaxTree.GetLineSpan(method.Span).StartLinePosition.Line + 1;
-                    var columnIndex = method.ToFullString().IndexOf("Handle") + 1;
+                    var columnIndex = 
+                        method
+                            .ToFullString()
+                            .Replace(Environment.NewLine, string.Empty)
+                            .IndexOf("Handle") + 1;
 
                     results.Add((file, lineIndex, columnIndex));
                 }
