@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
     <Metadata>
-        <Identity Id="HandlerFinder.25d004c4-0c98-46ed-9518-c168d0dd6269" Version="1.0.10" Language="en-US" Publisher="Benjamin K." />
+        <Identity Id="HandlerFinder.25d004c4-0c98-46ed-9518-c168d0dd6269" Version="1.0.11" Language="en-US" Publisher="Benjamin K." />
         <DisplayName>HandlerFinder</DisplayName>
         <Description xml:space="preserve">A basic extension to find the handlers of commands and requests within netgo codebases.</Description>
         <MoreInfo>https://github.com/btastic/HandlerFinder</MoreInfo>
