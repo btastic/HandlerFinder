@@ -77,7 +77,7 @@ namespace Konseben.HandlerFinder
                 ThreadHelper.JoinableTaskFactory.Run(async delegate
                 {
                     (SyntaxNode node, _) = await GetCurrentTokenAndDocumentAsync();
-                    command.Visible = IsSyntaxNodeSupported(node);
+                    command.Visible = HandlerSearch.IsSyntaxNodeSupported(node);
                 });
             }
         }
@@ -136,9 +136,9 @@ namespace Konseben.HandlerFinder
             {
                 (SyntaxNode node, Document document) = await GetCurrentTokenAndDocumentAsync();
 
-                if (IsSyntaxNodeSupported(node))
+                if (HandlerSearch.IsSyntaxNodeSupported(node))
                 {
-                    requestedCommandOrRequest = GetIdentifierNameByNode(node);
+                    requestedCommandOrRequest = HandlerSearch.GetIdentifierNameByNode(node);
                 }
             });
 
@@ -234,58 +234,11 @@ namespace Konseben.HandlerFinder
                 return new List<(string, int, int)>();
             }
 
-            var results = new List<(string, int, int)>();
-
             VisualStudioWorkspace workspace = componentModel.GetService<VisualStudioWorkspace>();
 
             Solution solution = workspace.CurrentSolution;
 
-            IEnumerable<MethodDeclarationSyntax> methodDeclarationSyntaxes =
-                (await solution.Projects.Select(p => p.Documents)
-                .SelectMany(x => x)
-                .Select(async doc =>
-                {
-                    var syntaxRoot = await doc.GetSyntaxRootAsync();
-
-                    return new
-                    {
-                        MethodDeclarations = syntaxRoot.DescendantNodes().OfType<MethodDeclarationSyntax>(),
-                    };
-                })
-                .WhenAllAsync())
-                .Where(x => x.MethodDeclarations.Any())
-                .SelectMany(x => x.MethodDeclarations)
-                .Where(x => x.Identifier.Text == "Handle");
-
-            foreach (MethodDeclarationSyntax method in methodDeclarationSyntaxes)
-            {
-                foreach (ParameterSyntax typeArgument in method.ParameterList.Parameters)
-                {
-                    string identifierText = GetIdentifierNameByNode(typeArgument);
-
-                    if (string.IsNullOrWhiteSpace(identifierText))
-                    {
-                        continue;
-                    }
-
-                    if (identifierText != requestedCommandOrRequest)
-                    {
-                        continue;
-                    }
-
-                    var file = method.SyntaxTree.FilePath;
-                    var lineIndex = method.SyntaxTree.GetLineSpan(method.Span).StartLinePosition.Line + 1;
-                    var columnIndex = 
-                        method
-                            .ToFullString()
-                            .Replace(Environment.NewLine, string.Empty)
-                            .IndexOf("Handle") + 1;
-
-                    results.Add((file, lineIndex, columnIndex));
-                }
-            }
-
-            return results;
+            return await HandlerSearch.FindHandlersAsync(solution, requestedCommandOrRequest);
         }
 
         /// <summary>
@@ -327,66 +280,6 @@ namespace Konseben.HandlerFinder
                 (IComponentModel)await ServiceProvider.GetServiceAsync(typeof(SComponentModel));
             Assumes.Present(componentModel);
             return componentModel.GetService<IVsEditorAdaptersFactoryService>();
-        }
-
-        /// <summary>
-        /// Checks if the syntax node type is supported
-        /// </summary>
-        /// <param name="node"></param>
-        /// <returns></returns>
-        private bool IsSyntaxNodeSupported(SyntaxNode node)
-        {
-            bool isSupported = node != null
-                && ((node is IdentifierNameSyntax) ||
-                    (node is RecordDeclarationSyntax) ||
-                    (node is ClassDeclarationSyntax) ||
-                    (node is ConstructorDeclarationSyntax));
-
-            isSupported = isSupported && GetIdentifierNameByNode(node) != string.Empty;
-
-            return isSupported;
-        }
-
-        private string GetIdentifierNameByNode(SyntaxNode node)
-        {
-            string name = string.Empty;
-
-            switch (node)
-            {
-                case ParameterSyntax parameterSyntax:
-                    switch (parameterSyntax.Type)
-                    {
-                        case QualifiedNameSyntax qualifiedNameSyntax:
-                            name = qualifiedNameSyntax.Right.Identifier.ToFullString().Trim();
-                            break;
-                        default:
-                            name = parameterSyntax.Type.ToFullString().Trim();
-                            break;
-                    }
-                    break;
-                case RecordDeclarationSyntax recordDeclarationSyntax:
-                    name = recordDeclarationSyntax.Identifier.Text;
-                    break;
-                case IdentifierNameSyntax identifierNameSyntax:
-                    name = identifierNameSyntax.Identifier.Text;
-                    break;
-                case ClassDeclarationSyntax classDeclarationSyntax:
-                    name = classDeclarationSyntax.Identifier.Text;
-                    break;
-                case GenericNameSyntax genericNameSyntax:
-                    name = genericNameSyntax.Identifier.Text;
-                    break;
-                case ConstructorDeclarationSyntax constructorDeclarationSyntax:
-                    name = constructorDeclarationSyntax.Identifier.Text;
-                    break;
-            }
-
-            if (name != "var")
-            {
-                return name;
-            }
-
-            return string.Empty;
         }
     }
 }

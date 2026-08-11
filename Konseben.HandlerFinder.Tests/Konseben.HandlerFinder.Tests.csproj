@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    The pure search logic is linked in rather than referenced via the VSIX project,
+    so these tests build and run standalone (dotnet test) without the Visual Studio SDK.
+  -->
+  <ItemGroup>
+    <Compile Include="..\Konseben.HandlerFinder\HandlerSearch.cs" Link="HandlerSearch.cs" />
+    <Compile Include="..\Konseben.HandlerFinder\EnumerableExtensions.cs" Link="EnumerableExtensions.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.0.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.6.6" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.6" />
+  </ItemGroup>
+
+</Project>
