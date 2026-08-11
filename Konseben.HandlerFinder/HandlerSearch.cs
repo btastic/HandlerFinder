@@ -28,21 +28,28 @@ namespace Konseben.HandlerFinder
                 return results;
             }
 
+            IEnumerable<Document> documents = solution.Projects
+                .SelectMany(p => p.Documents)
+                .Where(doc => doc.SupportsSyntaxTree);
+
             IEnumerable<MethodDeclarationSyntax> methodDeclarationSyntaxes =
-                (await solution.Projects.Select(p => p.Documents)
-                .SelectMany(x => x)
+                (await documents
                 .Select(async doc =>
                 {
+                    string content = (await doc.GetTextAsync()).ToString();
+
+                    if (content.IndexOf(requestedCommandOrRequest, StringComparison.Ordinal) < 0
+                        || content.IndexOf("Handle", StringComparison.Ordinal) < 0)
+                    {
+                        return Enumerable.Empty<MethodDeclarationSyntax>();
+                    }
+
                     var syntaxRoot = await doc.GetSyntaxRootAsync();
 
-                    return new
-                    {
-                        MethodDeclarations = syntaxRoot.DescendantNodes().OfType<MethodDeclarationSyntax>(),
-                    };
+                    return syntaxRoot.DescendantNodes().OfType<MethodDeclarationSyntax>();
                 })
                 .WhenAllAsync())
-                .Where(x => x.MethodDeclarations.Any())
-                .SelectMany(x => x.MethodDeclarations)
+                .SelectMany(x => x)
                 .Where(x => x.Identifier.Text == "Handle");
 
             foreach (MethodDeclarationSyntax method in methodDeclarationSyntaxes)
