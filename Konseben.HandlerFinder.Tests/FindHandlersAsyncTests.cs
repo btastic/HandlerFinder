@@ -120,12 +120,8 @@ public class GetFooQueryHandler
         }
 
         [Fact]
-        public async Task ColumnIndex_PointsAtHandleOnSingleLineMethod()
+        public async Task ColumnIndex_PointsAtHandleIdentifierOnSingleLineMethod()
         {
-            // Single-line handler avoids newline-normalization ambiguity, pinning the
-            // current column behavior exactly. Class name deliberately contains no
-            // "Handle" substring so the reported column is the method name's position
-            // within the method's own text (1-based).
             const string source =
                 "public class FooProcessor { public System.Threading.Tasks.Task Handle(GetFooQuery request) { return null; } }";
 
@@ -135,7 +131,19 @@ public class GetFooQueryHandler
 
             var result = Assert.Single(results);
             Assert.Equal(1, result.lineIndex);
-            Assert.Equal(36, result.columnIndex);
+            Assert.Equal(source.IndexOf("Handle", System.StringComparison.Ordinal) + 1, result.columnIndex);
+        }
+
+        [Fact]
+        public async Task LineAndColumn_PointAtHandleIdentifier_OnMultiLineMethod()
+        {
+            Solution solution = RoslynTestHelper.CreateSolution(("GetFooQueryHandler.cs", ClassHandler));
+
+            var results = await HandlerSearch.FindHandlersAsync(solution, "GetFooQuery");
+
+            var result = Assert.Single(results);
+            Assert.Equal(5, result.lineIndex);
+            Assert.Equal(17, result.columnIndex);
         }
     }
 }
