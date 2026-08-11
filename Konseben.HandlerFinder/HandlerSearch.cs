@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -19,7 +20,8 @@ namespace Konseben.HandlerFinder
         /// </summary>
         public static async Task<IReadOnlyList<(string file, int lineIndex, int columnIndex)>> FindHandlersAsync(
             Solution solution,
-            string requestedCommandOrRequest)
+            string requestedCommandOrRequest,
+            CancellationToken cancellationToken = default)
         {
             var results = new List<(string, int, int)>();
 
@@ -27,6 +29,8 @@ namespace Konseben.HandlerFinder
             {
                 return results;
             }
+
+            cancellationToken.ThrowIfCancellationRequested();
 
             IEnumerable<Document> documents = solution.Projects
                 .SelectMany(p => p.Documents)
@@ -36,7 +40,7 @@ namespace Konseben.HandlerFinder
                 (await documents
                 .Select(async doc =>
                 {
-                    string content = (await doc.GetTextAsync()).ToString();
+                    string content = (await doc.GetTextAsync(cancellationToken)).ToString();
 
                     if (content.IndexOf(requestedCommandOrRequest, StringComparison.Ordinal) < 0
                         || content.IndexOf("Handle", StringComparison.Ordinal) < 0)
@@ -44,7 +48,7 @@ namespace Konseben.HandlerFinder
                         return Enumerable.Empty<MethodDeclarationSyntax>();
                     }
 
-                    var syntaxRoot = await doc.GetSyntaxRootAsync();
+                    var syntaxRoot = await doc.GetSyntaxRootAsync(cancellationToken);
 
                     return syntaxRoot.DescendantNodes().OfType<MethodDeclarationSyntax>();
                 })
@@ -54,6 +58,8 @@ namespace Konseben.HandlerFinder
 
             foreach (MethodDeclarationSyntax method in methodDeclarationSyntaxes)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 foreach (ParameterSyntax typeArgument in method.ParameterList.Parameters)
                 {
                     string identifierText = GetIdentifierNameByNode(typeArgument);

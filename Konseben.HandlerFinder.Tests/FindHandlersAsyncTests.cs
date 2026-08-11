@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Xunit;
@@ -132,6 +133,18 @@ public class GetFooQueryHandler
             var result = Assert.Single(results);
             Assert.Equal(1, result.lineIndex);
             Assert.Equal(source.IndexOf("Handle", System.StringComparison.Ordinal) + 1, result.columnIndex);
+        }
+
+        [Fact]
+        public async Task Throws_WhenCancellationAlreadyRequested()
+        {
+            Solution solution = RoslynTestHelper.CreateSolution(("GetFooQueryHandler.cs", ClassHandler));
+
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            await Assert.ThrowsAnyAsync<System.OperationCanceledException>(
+                () => HandlerSearch.FindHandlersAsync(solution, "GetFooQuery", cts.Token));
         }
 
         [Fact]

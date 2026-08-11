@@ -238,7 +238,10 @@ namespace Konseben.HandlerFinder
 
             Solution solution = workspace.CurrentSolution;
 
-            return await HandlerSearch.FindHandlersAsync(solution, requestedCommandOrRequest);
+            return await HandlerSearch.FindHandlersAsync(
+                solution,
+                requestedCommandOrRequest,
+                _package.DisposalToken);
         }
 
         /// <summary>
