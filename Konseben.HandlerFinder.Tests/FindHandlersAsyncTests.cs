@@ -136,6 +136,35 @@ public class GetFooQueryHandler
         }
 
         [Fact]
+        public async Task Matches_WhenRequestNameStraddlesChunkBoundary()
+        {
+            // The text pre-filter scans in 16384-char chunks with overlap. Position the
+            // sole occurrence of the request name so it spans the first chunk boundary,
+            // to prove a match straddling two chunks is still found.
+            const string handler =
+@"public class BigHandler
+{
+    public void Handle(GetFooQuery request) { }
+}";
+            int indexInHandler = handler.IndexOf("GetFooQuery", System.StringComparison.Ordinal);
+            int targetStart = 16384 - 5; // 5 chars in the first chunk, the rest in the next
+            int padLength = targetStart - indexInHandler;
+
+            // A single line comment of exactly padLength chars ("//" + fill + "\n"),
+            // containing neither needle.
+            string padding = "//" + new string('x', padLength - 3) + "\n";
+            string source = padding + handler;
+
+            Assert.Equal(targetStart, source.IndexOf("GetFooQuery", System.StringComparison.Ordinal));
+
+            Solution solution = RoslynTestHelper.CreateSolution(("BigHandler.cs", source));
+
+            var results = await HandlerSearch.FindHandlersAsync(solution, "GetFooQuery");
+
+            Assert.Single(results);
+        }
+
+        [Fact]
         public async Task Throws_WhenCancellationAlreadyRequested()
         {
             Solution solution = RoslynTestHelper.CreateSolution(("GetFooQueryHandler.cs", ClassHandler));

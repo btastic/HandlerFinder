@@ -1,10 +1,12 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 
 namespace Konseben.HandlerFinder
 {
@@ -40,10 +42,10 @@ namespace Konseben.HandlerFinder
                 (await documents
                 .Select(async doc =>
                 {
-                    string content = (await doc.GetTextAsync(cancellationToken)).ToString();
+                    SourceText text = await doc.GetTextAsync(cancellationToken);
 
-                    if (content.IndexOf(requestedCommandOrRequest, StringComparison.Ordinal) < 0
-                        || content.IndexOf("Handle", StringComparison.Ordinal) < 0)
+                    if (!SourceTextContains(text, requestedCommandOrRequest)
+                        || !SourceTextContains(text, "Handle"))
                     {
                         return Enumerable.Empty<MethodDeclarationSyntax>();
                     }
@@ -84,6 +86,63 @@ namespace Konseben.HandlerFinder
             }
 
             return results;
+        }
+
+        private static bool SourceTextContains(SourceText text, string value)
+        {
+            int length = text.Length;
+            int needleLength = value.Length;
+
+            if (needleLength == 0)
+            {
+                return true;
+            }
+
+            if (needleLength > length)
+            {
+                return false;
+            }
+
+            const int chunkSize = 16384;
+            int overlap = needleLength - 1;
+            ReadOnlySpan<char> needle = value.AsSpan();
+
+            char[] buffer = ArrayPool<char>.Shared.Rent(chunkSize + overlap);
+
+            try
+            {
+                int carried = 0;
+                int position = 0;
+
+                while (position < length)
+                {
+                    int toCopy = Math.Min(chunkSize, length - position);
+                    text.CopyTo(position, buffer, carried, toCopy);
+
+                    int available = carried + toCopy;
+
+                    if (new ReadOnlySpan<char>(buffer, 0, available).IndexOf(needle) >= 0)
+                    {
+                        return true;
+                    }
+
+                    // Keep the last (needleLength - 1) chars so a match spanning this chunk
+                    // and the next is not missed.
+                    carried = Math.Min(overlap, available);
+                    if (carried > 0)
+                    {
+                        Array.Copy(buffer, available - carried, buffer, 0, carried);
+                    }
+
+                    position += toCopy;
+                }
+
+                return false;
+            }
+            finally
+            {
+                ArrayPool<char>.Shared.Return(buffer);
+            }
         }
 
         /// <summary>
